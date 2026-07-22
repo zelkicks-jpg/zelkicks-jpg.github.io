@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Live Weather Radar</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #0d1117;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #e6edf3;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  #header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 14px;
+    background: #161b22;
+    border-bottom: 1px solid #30363d;
+    flex-shrink: 0; flex-wrap: wrap;
+  }
+
+  .live-dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: #3fb950; flex-shrink: 0;
+    animation: pulse 2s infinite;
+  }
+  .forecast-dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: #f78166; flex-shrink: 0;
+    display: none;
+    animation: pulse-orange 2s infinite;
+  }
+  @keyframes pulse {
+    0%,100% { opacity:1; box-shadow:0 0 0 0 rgba(63,185,80,0.5); }
+    50%      { opacity:0.7; box-shadow:0 0 0 5px rgba(63,185,80,0); }
+  }
+  @keyframes pulse-orange {
+    0%,100% { opacity:1; box-shadow:0 0 0 0 rgba(247,129,102,0.5); }
+    50%      { opacity:0.7; box-shadow:0 0 0 5px rgba(247,129,102,0); }
+  }
+
+  #header h1 { font-size: 15px; font-weight: 600; white-space: nowrap; }
+
+  .divider { width: 1px; height: 20px; background: #30363d; flex-shrink: 0; }
+
+  .toggle-group {
+    display: flex;
+    background: #0d1117; border: 1px solid #30363d;
+    border-radius: 8px; overflow: hidden; flex-shrink: 0;
+  }
+  .toggle-group button {
+    background: transparent; border: none;
+    padding: 6px 14px; font-size: 13px; font-weight: 500;
+    color: #7d8590; cursor: pointer;
+    transition: background 0.15s, color 0.15s; white-space: nowrap;
+  }
+  .toggle-group button:hover { background: #21262d; color: #e6edf3; }
+  .toggle-group button.active { background: #1f6feb; color: #fff; }
+  .toggle-group button.active-orange { background: #b36a00; color: #fff; }
+
+  .btn {
+    display: flex; align-items: center; gap: 6px;
+    background: #21262d; border: 1px solid #30363d;
+    border-radius: 8px; padding: 6px 12px;
+    font-size: 13px; color: #e6edf3; cursor: pointer;
+    transition: background 0.15s; white-space: nowrap; flex-shrink: 0;
+  }
+  .btn:hover { background: #30363d; }
+  .btn:active { transform: scale(0.97); }
+
+  #ts-label { font-size: 12px; color: #7d8590; margin-left: auto; white-space: nowrap; }
+
+  #mode-badge {
+    font-size: 11px; font-weight: 600;
+    padding: 3px 9px; border-radius: 20px;
+    background: #1a3a1a; color: #3fb950;
+    border: 1px solid #2a5a2a;
+    white-space: nowrap; flex-shrink: 0;
+    transition: background 0.2s, color 0.2s, border-color 0.2s;
+  }
+  #mode-badge.forecast { background: #3a1a00; color: #f78166; border-color: #6a3a00; }
+
+  #map { flex: 1; width: 100%; min-height: 0; }
+
+  #footer {
+    display: flex; align-items: center; gap: 14px;
+    padding: 7px 14px;
+    background: #161b22; border-top: 1px solid #30363d;
+    flex-shrink: 0; flex-wrap: wrap;
+  }
+
+  .legend { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 200px; }
+  .legend-label { font-size: 12px; color: #7d8590; white-space: nowrap; }
+  .legend-bar-wrap { flex: 1; }
+  .legend-bar {
+    height: 11px; border-radius: 4px;
+    background: linear-gradient(to right,#00ffff,#00cc00,#ffff00,#ff8800,#ff2200,#cc00cc);
+    border: 1px solid #30363d;
+  }
+  .legend-ends {
+    display: flex; justify-content: space-between;
+    font-size: 10px; color: #7d8590; margin-top: 2px;
+  }
+
+  .loop-controls { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .loop-controls label { font-size: 12px; color: #7d8590; white-space: nowrap; }
+
+  input[type=range] {
+    -webkit-appearance: none; appearance: none;
+    width: 110px; height: 4px;
+    background: #30363d; border-radius: 2px; outline: none; cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 15px; height: 15px; border-radius: 50%;
+    background: #1f6feb; cursor: pointer; border: 2px solid #0d1117;
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 15px; height: 15px; border-radius: 50%;
+    background: #1f6feb; cursor: pointer; border: 2px solid #0d1117;
+  }
+  .frames-val { font-size: 13px; color: #e6edf3; min-width: 24px; }
+
+  #forecast-note {
+    display: none;
+    font-size: 11px; color: #9e6a03;
+    background: #2a1f00; border: 1px solid #4a3800;
+    border-radius: 6px; padding: 4px 10px;
+    white-space: nowrap; flex-shrink: 0;
+  }
+
+  .leaflet-control-attribution {
+    background: rgba(22,27,34,0.85) !important;
+    color: #7d8590 !important; font-size: 10px !important;
+  }
+  .leaflet-control-attribution a { color: #7d8590 !important; }
+  .leaflet-control-zoom a {
+    background: #161b22 !important; color: #e6edf3 !important;
+    border-color: #30363d !important;
+  }
+  .leaflet-control-zoom a:hover { background: #21262d !important; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <div class="live-dot" id="live-dot"></div>
+  <div class="forecast-dot" id="forecast-dot"></div>
+  <h1>Live Weather Radar</h1>
+
+  <div class="divider"></div>
+
+  <div class="toggle-group">
+    <button class="active" id="btn-fitchburg" onclick="setRegion('fitchburg')">Fitchburg Area</button>
+    <button id="btn-ne" onclick="setRegion('ne')">Greater New England</button>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="toggle-group">
+    <button class="active" id="btn-observed" onclick="setMode('observed')">Observed</button>
+    <button id="btn-forecast" onclick="setMode('forecast')">Forecast</button>
+  </div>
+
+  <span id="mode-badge">LIVE</span>
+
+  <button class="btn" onclick="toggleLoop()">
+    <svg id="play-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
+    </svg>
+    <span id="play-label">Pause</span>
+  </button>
+
+  <button class="btn" onclick="restartLoop()">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+      <path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+    </svg>
+    Refresh
+  </button>
+
+  <span id="ts-label">Loading…</span>
+</div>
+
+<div id="map"></div>
+
+<div id="footer">
+  <div class="legend">
+    <span class="legend-label">Intensity:</span>
+    <div class="legend-bar-wrap">
+      <div class="legend-bar"></div>
+      <div class="legend-ends">
+        <span>Light</span><span>Moderate</span><span>Heavy</span><span>Extreme</span>
+      </div>
+    </div>
+  </div>
+  <span id="forecast-note">⚠ Model simulation — not guaranteed</span>
+  <div class="loop-controls">
+    <label for="frames-slider">Frames:</label>
+    <input type="range" id="frames-slider" min="2" max="16" value="8" step="1"
+           oninput="document.getElementById('frames-val').textContent=this.value; setFrameCount(+this.value)" />
+    <span class="frames-val" id="frames-val">8</span>
+  </div>
+</div>
+
+<script>
+// ── Map ───────────────────────────────────────────────────────────────────────
+const map = L.map('map', { zoomControl: true, attributionControl: true });
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+  subdomains: 'abcd', maxZoom: 19
+}).addTo(map);
+
+// ── State ─────────────────────────────────────────────────────────────────────
+const VIEWS = {
+  fitchburg: { center: [42.58, -71.80], zoom: 9 },
+  ne:        { center: [43.8,  -71.0],  zoom: 7 }
+};
+
+let currentRegion = 'fitchburg';
+let currentMode   = 'observed';
+let frames        = [];
+let frameIndex    = 0;
+let frameCount    = 8;
+let frameLayers   = {};
+let loopTimer     = null;
+let playing       = true;
+// Forecast uses 15-min steps, observed uses 5-min — give each a comfortable interval
+const INTERVAL_OBS = 650;
+const INTERVAL_FCS = 900;
+
+map.setView(VIEWS.fitchburg.center, VIEWS.fitchburg.zoom);
+
+// ── Region toggle ─────────────────────────────────────────────────────────────
+function setRegion(region) {
+  currentRegion = region;
+  document.getElementById('btn-fitchburg').classList.toggle('active', region === 'fitchburg');
+  document.getElementById('btn-ne').classList.toggle('active', region === 'ne');
+  map.flyTo(VIEWS[region].center, VIEWS[region].zoom, { duration: 0.8 });
+}
+
+// ── Mode toggle ───────────────────────────────────────────────────────────────
+function setMode(mode) {
+  currentMode = mode;
+  const obsBtn  = document.getElementById('btn-observed');
+  const fcsBtn  = document.getElementById('btn-forecast');
+  const badge   = document.getElementById('mode-badge');
+  const note    = document.getElementById('forecast-note');
+  const liveDot = document.getElementById('live-dot');
+  const fcsDot  = document.getElementById('forecast-dot');
+  const sl      = document.getElementById('frames-slider');
+
+  if (mode === 'observed') {
+    obsBtn.classList.add('active');        obsBtn.classList.remove('active-orange');
+    fcsBtn.classList.remove('active');     fcsBtn.classList.remove('active-orange');
+    badge.textContent = 'LIVE';            badge.classList.remove('forecast');
+    note.style.display  = 'none';
+    liveDot.style.display = 'block';       fcsDot.style.display = 'none';
+    sl.max = 16;
+    document.getElementById('frames-val').textContent = sl.value;
+  } else {
+    fcsBtn.classList.add('active-orange'); fcsBtn.classList.remove('active');
+    obsBtn.classList.remove('active');
+    badge.textContent = 'FORECAST';        badge.classList.add('forecast');
+    note.style.display  = 'block';
+    liveDot.style.display = 'none';        fcsDot.style.display = 'block';
+    // HRRR has 18 hours × 4 frames/hr = 72 frames at 15-min steps; cap UI at 18 (hourly)
+    sl.max = 18;
+    if (+sl.value > 18) { sl.value = 8; }
+    document.getElementById('frames-val').textContent = sl.value;
+  }
+  frameCount = +sl.value;
+  clearAllLayers();
+  restartLoop();
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function pad2(n)  { return String(n).padStart(2,  '0'); }
+function pad4(n)  { return String(n).padStart(4,  '0'); }
+
+function clearAllLayers() {
+  Object.values(frameLayers).forEach(lyr => { if (map.hasLayer(lyr)) map.removeLayer(lyr); });
+  frameLayers = {};
+  frames = [];
+}
+
+// ── Observed: NEXRAD n0q composite tiles ─────────────────────────────────────
+// URL: /cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png?ts=YYYYMMDDHHmm
+function observedTimestamps(count) {
+  const now = new Date();
+  now.setMinutes(Math.floor(now.getMinutes() / 5) * 5, 0, 0);
+  const stamps = [];
+  for (let i = count - 1; i >= 0; i--) {
+    const d = new Date(now.getTime() - i * 5 * 60 * 1000);
+    stamps.push(fmtObsTS(d));
+  }
+  return stamps;
+}
+
+function fmtObsTS(d) {
+  return `${d.getUTCFullYear()}${pad2(d.getUTCMonth()+1)}${pad2(d.getUTCDate())}${pad2(d.getUTCHours())}${pad2(d.getUTCMinutes())}`;
+}
+
+function observedTileUrl(ts) {
+  return `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png?ts=${ts}`;
+}
+
+// ── Forecast: HRRR REFD tiles ─────────────────────────────────────────────────
+// URL format: /cache/tile.py/1.0.0/hrrr::REFD-F{MMMM}-{YYYYMMDDHH}/{z}/{x}/{y}.png
+// MMMM = forecast offset in MINUTES, zero-padded to 4 digits
+// YYYYMMDDHH = model init time in UTC (10 digits); use 0 for latest run
+//
+// HRRR runs hourly, forecasts every 15 minutes out to 18 hours.
+// We step through hourly increments (60-min steps) for a clean loop.
+
+function forecastFrames(count) {
+  // Use model init = 0 (latest run IEM has processed)
+  // Steps: F0000, F0060, F0120, ... (minutes)
+  const frameList = [];
+  for (let i = 0; i < count; i++) {
+    const minutes = i * 60; // hourly steps
+    frameList.push({ minutes, label: i });
+  }
+  return frameList;
+}
+
+function forecastTileUrl(minutes) {
+  const mStr = pad4(minutes); // e.g. "0060"
+  // Use model init time = 0 so IEM picks latest available run automatically
+  return `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/hrrr::REFD-F${mStr}-0/{z}/{x}/{y}.png`;
+}
+
+// ── Build & show layers ───────────────────────────────────────────────────────
+function buildObservedLayers(timestamps) {
+  const keep = new Set(timestamps);
+  Object.keys(frameLayers).forEach(k => {
+    if (!keep.has(k)) {
+      if (map.hasLayer(frameLayers[k])) map.removeLayer(frameLayers[k]);
+      delete frameLayers[k];
+    }
+  });
+  timestamps.forEach(ts => {
+    if (!frameLayers[ts]) {
+      frameLayers[ts] = L.tileLayer(observedTileUrl(ts), {
+        opacity: 0.78, zIndex: 200,
+        attribution: 'Radar &copy; <a href="https://mesonet.agron.iastate.edu/">Iowa Env. Mesonet / NWS</a>'
+      });
+    }
+  });
+}
+
+function buildForecastLayers(frameList) {
+  clearAllLayers();
+  frameList.forEach(f => {
+    const key = `fcs_${f.minutes}`;
+    frameLayers[key] = L.tileLayer(forecastTileUrl(f.minutes), {
+      opacity: 0.78, zIndex: 200,
+      attribution: 'Forecast &copy; <a href="https://mesonet.agron.iastate.edu/">Iowa Env. Mesonet / HRRR / NOAA</a>'
+    });
+  });
+}
+
+function showObservedFrame(index) {
+  const ts = frames[index];
+  frames.forEach((t, i) => {
+    const lyr = frameLayers[t];
+    if (!lyr) return;
+    if (i === index) { if (!map.hasLayer(lyr)) lyr.addTo(map); }
+    else             { if ( map.hasLayer(lyr)) map.removeLayer(lyr); }
+  });
+  const y=ts.slice(0,4),mo=ts.slice(4,6),d=ts.slice(6,8),h=ts.slice(8,10),m=ts.slice(10,12);
+  const dt = new Date(`${y}-${mo}-${d}T${h}:${m}:00Z`);
+  document.getElementById('ts-label').textContent =
+    dt.toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', timeZoneName:'short' });
+}
+
+function showForecastFrame(index, frameList) {
+  frameList.forEach((f, i) => {
+    const key = `fcs_${f.minutes}`;
+    const lyr = frameLayers[key];
+    if (!lyr) return;
+    if (i === index) { if (!map.hasLayer(lyr)) lyr.addTo(map); }
+    else             { if ( map.hasLayer(lyr)) map.removeLayer(lyr); }
+  });
+  const hrs = frameList[index].minutes / 60;
+  const now = new Date(); now.setMinutes(0, 0, 0);
+  const dt  = new Date(now.getTime() + hrs * 3600000);
+  const label = dt.toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', timeZoneName:'short' });
+  const ahead = hrs === 0 ? 'Now' : `+${hrs}h`;
+  document.getElementById('ts-label').textContent = `${ahead} · ${label}`;
+}
+
+// ── Loop control ──────────────────────────────────────────────────────────────
+let forecastFrameList = [];
+
+function step() {
+  frameIndex = (frameIndex + 1) % (currentMode === 'observed' ? frames.length : forecastFrameList.length);
+  if (currentMode === 'observed') showObservedFrame(frameIndex);
+  else                            showForecastFrame(frameIndex, forecastFrameList);
+}
+
+function startLoop() {
+  clearInterval(loopTimer);
+  loopTimer = setInterval(step, currentMode === 'observed' ? INTERVAL_OBS : INTERVAL_FCS);
+}
+function stopLoop() { clearInterval(loopTimer); }
+
+function toggleLoop() {
+  playing = !playing;
+  const icon  = document.getElementById('play-icon');
+  const label = document.getElementById('play-label');
+  if (playing) {
+    icon.innerHTML = '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>';
+    label.textContent = 'Pause';
+    startLoop();
+  } else {
+    icon.innerHTML = '<polygon points="5 3 19 12 5 21 5 3"/>';
+    label.textContent = 'Play';
+    stopLoop();
+  }
+}
+
+function setFrameCount(n) { frameCount = n; restartLoop(); }
+
+function restartLoop() {
+  stopLoop();
+  frameIndex = 0;
+  if (currentMode === 'observed') {
+    frames = observedTimestamps(frameCount);
+    buildObservedLayers(frames);
+    showObservedFrame(0);
+  } else {
+    forecastFrameList = forecastFrames(frameCount);
+    buildForecastLayers(forecastFrameList);
+    showForecastFrame(0, forecastFrameList);
+  }
+  if (playing) startLoop();
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+restartLoop();
+// Auto-refresh observed data every 5 min; forecast every 30 min (HRRR updates hourly)
+setInterval(() => { if (currentMode === 'observed') restartLoop(); }, 5  * 60 * 1000);
+setInterval(() => { if (currentMode === 'forecast') restartLoop(); }, 30 * 60 * 1000);
+</script>
+</body>
+</html>
